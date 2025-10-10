@@ -1,0 +1,74 @@
+{
+  "name": "kidverse",
+  "version": "0.1.0",
+  "description": "AI-powered kid-safe digital platform with edge AI models, multi-layer content filtering, and parental controls",
+  "private": true,
+  "workspaces": [
+    "edge-ai",
+    "content-filter",
+    "parental-controls",
+    "auth",
+    "web",
+    "mobile"
+  ],
+  "scripts": {
+    "dev": "docker-compose up",
+    "dev:stop": "docker-compose down",
+    "dev:clean": "docker-compose down -v",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "test:integration": "jest --config jest.integration.config.js",
+    "test:e2e": "playwright test",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky install",
+    "postinstall": "npm run setup:hooks",
+    "setup:hooks": "node scripts/setup-hooks.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@playwright/test": "^1.40.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^8.0.3",
+    "jest": "^29.7.0",
+    "lint-staged": "^15.1.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.2",
+    "turbo": "^1.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CrazyDubya/kidverse.git"
+  },
+  "keywords": [
+    "kidverse",
+    "parental-controls",
+    "content-filtering",
+    "edge-ai",
+    "child-safety",
+    "digital-wellbeing"
+  ],
+  "author": "Kidverse Team",
+  "license": "MIT",
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  }
+}

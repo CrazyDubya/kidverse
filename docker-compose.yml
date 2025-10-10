@@ -1,0 +1,206 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: kidverse-postgres
+    environment:
+      POSTGRES_DB: kidverse
+      POSTGRES_USER: kidverse
+      POSTGRES_PASSWORD: kidverse_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kidverse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: kidverse-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # MongoDB for logs and analytics
+  mongodb:
+    image: mongo:7
+    container_name: kidverse-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: kidverse
+      MONGO_INITDB_ROOT_PASSWORD: kidverse_dev_password
+      MONGO_INITDB_DATABASE: kidverse_analytics
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Edge AI Service
+  edge-ai:
+    build:
+      context: ./edge-ai
+      dockerfile: Dockerfile
+    container_name: kidverse-edge-ai
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MODEL_PATH=/app/models
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./edge-ai:/app
+      - ai_models:/app/models
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Content Filter Service
+  content-filter:
+    build:
+      context: ./content-filter
+      dockerfile: Dockerfile
+    container_name: kidverse-content-filter
+    environment:
+      - DATABASE_URL=postgresql://kidverse:kidverse_dev_password@postgres:5432/kidverse
+      - REDIS_URL=redis://redis:6379
+      - EDGE_AI_URL=http://edge-ai:8000
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./content-filter:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      edge-ai:
+        condition: service_started
+    restart: unless-stopped
+
+  # Auth Service
+  auth:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    container_name: kidverse-auth
+    environment:
+      - DATABASE_URL=postgresql://kidverse:kidverse_dev_password@postgres:5432/kidverse
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev_jwt_secret_change_in_production
+      - JWT_EXPIRATION=24h
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./auth:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Parental Controls Service
+  parental-controls:
+    build:
+      context: ./parental-controls
+      dockerfile: Dockerfile
+    container_name: kidverse-parental-controls
+    environment:
+      - DATABASE_URL=postgresql://kidverse:kidverse_dev_password@postgres:5432/kidverse
+      - MONGODB_URL=mongodb://kidverse:kidverse_dev_password@mongodb:27017/kidverse_analytics?authSource=admin
+      - REDIS_URL=redis://redis:6379
+      - AUTH_SERVICE_URL=http://auth:8000
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./parental-controls:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    restart: unless-stopped
+
+  # Web Application
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: kidverse-web
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_AUTH_URL=http://localhost:8003
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - auth
+      - content-filter
+    restart: unless-stopped
+
+  # Parental Dashboard
+  dashboard:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: kidverse-dashboard
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_AUTH_URL=http://localhost:8003
+      - NEXT_PUBLIC_DASHBOARD_MODE=true
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - parental-controls
+    restart: unless-stopped
+
+  # API Gateway (Nginx)
+  gateway:
+    image: nginx:alpine
+    container_name: kidverse-gateway
+    ports:
+      - "8000:80"
+    volumes:
+      - ./infra/docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - edge-ai
+      - content-filter
+      - auth
+      - parental-controls
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongodb_data:
+  ai_models:
+
+networks:
+  default:
+    name: kidverse-network
